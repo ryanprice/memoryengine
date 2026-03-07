@@ -1,0 +1,25 @@
+# Environment
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Memory files — commit core.md to track domain knowledge
+# but gitignore working memory and archives by default
+memory/working.md
+memory/archive/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store

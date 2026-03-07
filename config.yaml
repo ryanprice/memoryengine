@@ -1,0 +1,47 @@
+# ─────────────────────────────────────────────────────────
+# Memory Engine Configuration
+# ─────────────────────────────────────────────────────────
+# Copy this file and rename to config.yaml
+# Environment variables override these values where noted
+
+# ── LLM Provider ─────────────────────────────────────────
+# Options: anthropic | openai | ollama | openai_compatible
+provider: openai
+
+# Model to use for extraction and compaction prompts
+# anthropic:        claude-opus-4-5-20251101 | claude-sonnet-4-6
+# openai:           gpt-4o | gpt-4o-mini
+# ollama:           llama3.2 | mistral | phi3
+# openai_compatible: depends on your endpoint
+model: gpt-4o-mini
+
+# API key — can also be set via environment variable:
+#   ANTHROPIC_API_KEY, OPENAI_API_KEY
+# Leave blank to use env var only (recommended)
+api_key:
+
+# Base URL for ollama or openai_compatible endpoints
+# base_url: http://localhost:11434    # ollama default
+# base_url: https://api.together.ai/v1
+
+# ── Memory Location ───────────────────────────────────────
+memory_dir: memory
+
+# ── Compaction Thresholds ─────────────────────────────────
+# Compaction is triggered when EITHER threshold is exceeded.
+# Tune these based on your provider's context window and cost.
+
+# Estimated token count threshold for the combined memory files
+# ~6000 tokens ≈ ~24,000 chars ≈ a good balance before signal degrades
+token_threshold: 6000
+
+# Working memory file size in bytes
+# 40KB ≈ ~10,000 tokens of dense text
+size_threshold_bytes: 40000
+
+# ── Compaction LLM Settings ───────────────────────────────
+# Max tokens to request for each compaction LLM call
+compaction_max_tokens: 4000
+
+# Max tokens for extraction pass
+extraction_max_tokens: 2000

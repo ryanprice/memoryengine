@@ -1,0 +1,11 @@
+# ── Required ──────────────────────────────────────────────
+pyyaml>=6.0
+python-dotenv>=1.0
+requests>=2.31       # used by OllamaProvider
+
+# ── Provider SDKs (install only what you need) ────────────
+# anthropic>=0.40     # Anthropic / Claude
+# openai>=1.30        # OpenAI and OpenAI-compatible endpoints
+
+# ── Optional but recommended ──────────────────────────────
+# tiktoken>=0.7       # Accurate token counting (falls back to char/4 without this)
