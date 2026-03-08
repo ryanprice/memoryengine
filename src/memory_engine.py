@@ -98,6 +98,67 @@ class MemoryEngine:
     def write_working(self, content: str):
         self.working_file.write_text(content.strip() + "\n", encoding="utf-8")
 
+
+    # ── Identity Initialisation ──────────────────────────────────────
+
+    def is_initialized(self) -> bool:
+        """
+        Returns True if IDENTITY tier has been populated with at least one entry.
+        Use this to detect first-run vs resuming a prior session.
+
+        Example::
+
+            if not engine.is_initialized():
+                engine.init_identity(
+                    identity="I am an assistant helping with X.",
+                    procedural="I respond concisely. I cite sources.",
+                )
+        """
+        try:
+            sections = self.parse_sections(self.read_core())
+            return bool(sections.get("IDENTITY", "").strip())
+        except Exception:
+            return False
+
+    def init_identity(
+        self,
+        identity: str,
+        procedural: str = "",
+    ) -> bool:
+        """
+        Seed the IDENTITY (and optionally PROCEDURAL) tier on first use.
+        No-op if IDENTITY is already populated — safe to call on every startup.
+
+        Args:
+            identity:   Who or what this agent/system is. Written to [IDENTITY].
+            procedural: How this agent operates — rules, preferences, patterns.
+                        Written to [PROCEDURAL]. Optional.
+
+        Returns:
+            True  if identity was written (first run).
+            False if identity was already present (subsequent runs — no-op).
+
+        Example::
+
+            engine.init_identity(
+                identity=(
+                    "I am Aria, a customer support agent for Acme Corp. "
+                    "I help users troubleshoot software issues."
+                ),
+                procedural=(
+                    "I always ask clarifying questions before suggesting solutions. "
+                    "I escalate to human support after 3 failed attempts."
+                ),
+            )
+        """
+        if self.is_initialized():
+            return False
+
+        self.append_memory(identity.strip(), tier="IDENTITY")
+        if procedural.strip():
+            self.append_memory(procedural.strip(), tier="PROCEDURAL")
+        return True
+
     # ── Append ────────────────────────────────
 
     def append_memory(self, content: str, tier: str = "EPISODIC") -> bool:
