@@ -98,6 +98,45 @@ class MemoryEngine:
     def write_working(self, content: str):
         self.working_file.write_text(content.strip() + "\n", encoding="utf-8")
 
+    # ── Deduplication ─────────────────────────
+
+    def extract_tier_entries(self, text: str, tier: str) -> list[str]:
+        """
+        Extract entry content strings (without timestamps) from a tier section.
+        Returns lowercased, stripped content for comparison.
+        """
+        header = f"## [{tier}]"
+        if header not in text:
+            return []
+        start = text.index(header) + len(header)
+        next_header = re.search(r"\n## \[", text[start:])
+        end = start + next_header.start() if next_header else len(text)
+        section = text[start:end]
+        entries = []
+        for line in section.splitlines():
+            line = line.strip()
+            if line.startswith("- "):
+                match = re.match(r"^- \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\]\s*", line)
+                if match:
+                    entries.append(line[match.end():].strip().lower())
+                else:
+                    entries.append(line[2:].strip().lower())
+        return entries
+
+    def _is_duplicate(self, content: str, tier: str, text: str) -> bool:
+        """
+        Check if content is a duplicate of an existing entry in the tier.
+        Uses exact match and substring containment for entries > 20 chars.
+        """
+        existing = self.extract_tier_entries(text, tier)
+        normalised = content.strip().lower()
+        if normalised in existing:
+            return True
+        if len(normalised) > 20:
+            for e in existing:
+                if normalised in e or e in normalised:
+                    return True
+        return False
 
     # ── Identity Initialisation ──────────────────────────────────────
 
@@ -164,17 +203,25 @@ class MemoryEngine:
     def append_memory(self, content: str, tier: str = "EPISODIC") -> bool:
         """
         Append a timestamped entry to the correct tier section.
-        Returns True if successful.
+        Deduplicates durable tiers (IDENTITY, PROCEDURAL, SEMANTIC) —
+        skips if an identical or substring-matching entry already exists.
+        Returns True if written, False if skipped as duplicate.
         """
         tier = tier.upper()
         if tier not in TIERS:
             raise ValueError(f"Unknown tier '{tier}'. Valid: {list(TIERS.keys())}")
 
+        target = "core" if TIERS[tier]["file"] == "core" else "working"
+        text   = self.read_core() if target == "core" else self.read_working()
+
+        # Deduplicate durable tiers
+        if tier in ("IDENTITY", "PROCEDURAL", "SEMANTIC"):
+            if self._is_duplicate(content, tier, text):
+                return False
+
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
         entry = f"- [{timestamp}] {content.strip()}"
 
-        target = "core" if TIERS[tier]["file"] == "core" else "working"
-        text   = self.read_core() if target == "core" else self.read_working()
         updated = self._insert_into_section(text, tier, entry)
 
         if target == "core":
@@ -250,9 +297,7 @@ class MemoryEngine:
         counts = {}
         for t in TIERS:
             source = self.read_core() if TIERS[t]["file"] == "core" else self.read_working()
-            sections = self.parse_sections(source)
-            section_text = sections.get(t, "")
-            counts[t] = len(re.findall(r"^- \[", section_text, re.MULTILINE))
+            counts[t] = len(self.extract_tier_entries(source, t))
         if tier:
             return {tier: counts.get(tier.upper(), 0)}
         return counts

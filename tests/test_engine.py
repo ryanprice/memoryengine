@@ -158,6 +158,72 @@ class TestMemoryEngine:
         assert "Core fact" in combined
         assert "Working fact" in combined
 
+    # ── Deduplication tests ──────────────────
+
+    def test_dedup_exact_semantic(self):
+        engine, _ = make_engine()
+        assert engine.append_memory("Consciousness is fundamental", tier="SEMANTIC") is True
+        assert engine.append_memory("Consciousness is fundamental", tier="SEMANTIC") is False
+        counts = engine.entry_count()
+        assert counts["SEMANTIC"] == 1
+
+    def test_dedup_exact_procedural(self):
+        engine, _ = make_engine()
+        engine.append_memory("I search for information frequently", tier="PROCEDURAL")
+        engine.append_memory("I search for information frequently", tier="PROCEDURAL")
+        engine.append_memory("I search for information frequently", tier="PROCEDURAL")
+        counts = engine.entry_count()
+        assert counts["PROCEDURAL"] == 1
+
+    def test_dedup_substring_match(self):
+        engine, _ = make_engine()
+        engine.append_memory("Consciousness arises from quantum processes in microtubules", tier="SEMANTIC")
+        # Shorter version is a substring — should be skipped
+        result = engine.append_memory("quantum processes in microtubules", tier="SEMANTIC")
+        assert result is False
+        counts = engine.entry_count()
+        assert counts["SEMANTIC"] == 1
+
+    def test_dedup_case_insensitive(self):
+        engine, _ = make_engine()
+        engine.append_memory("Reality is quantum-geometric", tier="SEMANTIC")
+        result = engine.append_memory("REALITY IS QUANTUM-GEOMETRIC", tier="SEMANTIC")
+        assert result is False
+        counts = engine.entry_count()
+        assert counts["SEMANTIC"] == 1
+
+    def test_no_dedup_for_episodic(self):
+        engine, _ = make_engine()
+        engine.append_memory("Searched for quantum mechanics", tier="EPISODIC")
+        engine.append_memory("Searched for quantum mechanics", tier="EPISODIC")
+        counts = engine.entry_count()
+        assert counts["EPISODIC"] == 2
+
+    def test_dedup_identity(self):
+        engine, _ = make_engine()
+        engine.append_memory("I am agent qwen", tier="IDENTITY")
+        engine.append_memory("I am agent qwen", tier="IDENTITY")
+        counts = engine.entry_count()
+        assert counts["IDENTITY"] == 1
+
+    def test_unique_entries_not_deduped(self):
+        engine, _ = make_engine()
+        engine.append_memory("Fact about consciousness", tier="SEMANTIC")
+        engine.append_memory("Fact about quantum mechanics", tier="SEMANTIC")
+        engine.append_memory("Fact about simulation theory", tier="SEMANTIC")
+        counts = engine.entry_count()
+        assert counts["SEMANTIC"] == 3
+
+    def test_extract_tier_entries(self):
+        engine, _ = make_engine()
+        engine.append_memory("Entry one", tier="SEMANTIC")
+        engine.append_memory("Entry two", tier="SEMANTIC")
+        core = engine.read_core()
+        entries = engine.extract_tier_entries(core, "SEMANTIC")
+        assert len(entries) == 2
+        assert "entry one" in entries
+        assert "entry two" in entries
+
 
 # ─────────────────────────────────────────────
 # Compactor tests (no LLM — mock provider)
