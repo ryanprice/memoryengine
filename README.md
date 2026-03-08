@@ -221,6 +221,64 @@ To also track archives (optional):
 
 ---
 
+## Deduplication
+
+Durable tiers (`IDENTITY`, `PROCEDURAL`, `SEMANTIC`) are automatically
+deduplicated on write. Before appending, the engine checks whether an
+identical or near-identical entry already exists in that tier:
+
+- **Exact match** — content is normalised (stripped, lowercased) and compared
+  to every existing entry in the tier.
+- **Substring containment** — for entries longer than 20 characters, if the new
+  content is fully contained in an existing entry (or vice versa), it is
+  treated as a duplicate.
+
+When a duplicate is detected, `append_memory()` returns `False` and the
+entry is silently skipped. This prevents the convergence problem where
+agents in a loop write the same belief or procedural note hundreds of times.
+
+`EPISODIC` and `EPHEMERAL` tiers are **not** deduplicated at the engine level —
+callers should implement their own recency checks if needed.
+
+```python
+engine.append_memory("Consciousness is fundamental", tier="SEMANTIC")  # True  — written
+engine.append_memory("Consciousness is fundamental", tier="SEMANTIC")  # False — skipped
+engine.append_memory("CONSCIOUSNESS IS FUNDAMENTAL", tier="SEMANTIC")  # False — case-insensitive
+```
+
+You can also use `extract_tier_entries()` to inspect what's in a tier
+without timestamps:
+
+```python
+core = engine.read_core()
+entries = engine.extract_tier_entries(core, "SEMANTIC")
+# → ["consciousness is fundamental", ...]
+```
+
+---
+
+## Identity Initialisation
+
+Use `init_identity()` to seed the `IDENTITY` and `PROCEDURAL` tiers on first
+startup. It is safe to call on every startup — it no-ops if identity is already
+populated.
+
+```python
+engine.init_identity(
+    identity="I am Aria, a customer support agent for Acme Corp.",
+    procedural="I always ask clarifying questions before suggesting solutions.",
+)
+```
+
+Check whether identity has been set:
+
+```python
+if not engine.is_initialized():
+    engine.init_identity(identity="...", procedural="...")
+```
+
+---
+
 ## Programmatic Usage
 
 ```python
@@ -232,8 +290,14 @@ engine    = MemoryEngine(memory_dir="memory")
 provider  = get_provider({"provider": "anthropic", "model": "claude-opus-4-5-20251101"})
 compactor = Compactor(engine, provider)
 
+# Initialise identity (no-op on subsequent runs)
+engine.init_identity(
+    identity="User is building a SaaS product",
+    procedural="Respond concisely. Cite sources.",
+)
+
 # Write
-engine.append_memory("User is building a SaaS product", tier="IDENTITY")
+engine.append_memory("Project uses Postgres 16", tier="SEMANTIC")
 
 # Extract from session
 extracted = compactor.extract(session_text, auto_apply=True)
