@@ -123,19 +123,37 @@ class MemoryEngine:
                     entries.append(line[2:].strip().lower())
         return entries
 
-    def _is_duplicate(self, content: str, tier: str, text: str) -> bool:
+    def _is_duplicate(self, content: str, tier: str, text: str,
+                       lookback: int = 0, overlap_threshold: float = 0.50) -> bool:
         """
         Check if content is a duplicate of an existing entry in the tier.
-        Uses exact match and substring containment for entries > 20 chars.
+        Uses exact match, substring containment, AND word-overlap similarity.
+
+        Args:
+            lookback: If >0, only check the most recent N entries (for large tiers).
+                      0 means check all entries.
+            overlap_threshold: Word-overlap ratio above which an entry is a duplicate.
         """
         existing = self.extract_tier_entries(text, tier)
+        if lookback > 0:
+            existing = existing[:lookback]
         normalised = content.strip().lower()
-        if normalised in existing:
-            return True
-        if len(normalised) > 20:
-            for e in existing:
-                if normalised in e or e in normalised:
-                    return True
+        new_words = set(normalised.split())
+
+        for e in existing:
+            # Exact match
+            if normalised == e:
+                return True
+            # Substring containment
+            if len(normalised) > 20 and (normalised in e or e in normalised):
+                return True
+            # Word-overlap similarity
+            if len(new_words) > 3:
+                old_words = set(e.split())
+                if len(old_words) > 3:
+                    overlap = len(new_words & old_words) / max(len(new_words), len(old_words))
+                    if overlap > overlap_threshold:
+                        return True
         return False
 
     # ── Identity Initialisation ──────────────────────────────────────
@@ -200,11 +218,23 @@ class MemoryEngine:
 
     # ── Append ────────────────────────────────
 
+    # Configurable episodic dedup parameters
+    EPISODIC_LOOKBACK = 40            # check last N entries for near-duplicates
+    EPISODIC_OVERLAP_THRESHOLD = 0.50 # word-overlap ratio that counts as duplicate
+    EPISODIC_MAX_ENTRIES = 300        # hard cap — oldest entries pruned when exceeded
+
     def append_memory(self, content: str, tier: str = "EPISODIC") -> bool:
         """
         Append a timestamped entry to the correct tier section.
-        Deduplicates durable tiers (IDENTITY, PROCEDURAL, SEMANTIC) —
-        skips if an identical or substring-matching entry already exists.
+
+        Deduplication:
+        - Durable tiers (IDENTITY, PROCEDURAL, SEMANTIC) — full scan,
+          skips if an identical, substring-matching, or >50% word-overlap
+          entry already exists.
+        - EPISODIC — checks last 40 entries for near-duplicates. Also
+          enforces a hard cap of 300 entries, pruning oldest when exceeded.
+        - EPHEMERAL — no dedup (always written).
+
         Returns True if written, False if skipped as duplicate.
         """
         tier = tier.upper()
@@ -214,9 +244,18 @@ class MemoryEngine:
         target = "core" if TIERS[tier]["file"] == "core" else "working"
         text   = self.read_core() if target == "core" else self.read_working()
 
-        # Deduplicate durable tiers
+        # Deduplicate durable tiers (full scan)
         if tier in ("IDENTITY", "PROCEDURAL", "SEMANTIC"):
             if self._is_duplicate(content, tier, text):
+                return False
+
+        # Deduplicate EPISODIC (recent lookback window)
+        if tier == "EPISODIC":
+            if self._is_duplicate(
+                content, tier, text,
+                lookback=self.EPISODIC_LOOKBACK,
+                overlap_threshold=self.EPISODIC_OVERLAP_THRESHOLD,
+            ):
                 return False
 
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -224,11 +263,36 @@ class MemoryEngine:
 
         updated = self._insert_into_section(text, tier, entry)
 
+        # Enforce hard cap on EPISODIC entries
+        if tier == "EPISODIC":
+            updated = self._enforce_entry_cap(updated, tier, self.EPISODIC_MAX_ENTRIES)
+
         if target == "core":
             self.write_core(updated)
         else:
             self.write_working(updated)
         return True
+
+    def _enforce_entry_cap(self, text: str, tier: str, max_entries: int) -> str:
+        """Prune oldest entries if a tier exceeds max_entries."""
+        header = f"## [{tier}]"
+        if header not in text:
+            return text
+
+        start = text.index(header) + len(header)
+        next_h = re.search(r"\n## \[", text[start:])
+        end = start + (next_h.start() if next_h else len(text) - start)
+
+        section = text[start:end]
+        entries = [l for l in section.strip().splitlines() if l.strip().startswith("- ")]
+
+        if len(entries) <= max_entries:
+            return text
+
+        # Keep the most recent entries (they're inserted at the top after the header)
+        pruned = entries[:max_entries]
+        new_section = "\n" + "\n".join(pruned) + "\n"
+        return text[:start] + new_section + text[end:]
 
     def _insert_into_section(self, text: str, tier: str, entry: str) -> str:
         """Insert entry at the end of a tier section, before the next section."""

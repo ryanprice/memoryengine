@@ -192,12 +192,44 @@ class TestMemoryEngine:
         counts = engine.entry_count()
         assert counts["SEMANTIC"] == 1
 
-    def test_no_dedup_for_episodic(self):
+    def test_dedup_episodic_exact(self):
+        """Exact duplicate EPISODIC entries are now deduplicated."""
         engine, _ = make_engine()
         engine.append_memory("Searched for quantum mechanics", tier="EPISODIC")
         engine.append_memory("Searched for quantum mechanics", tier="EPISODIC")
         counts = engine.entry_count()
+        assert counts["EPISODIC"] == 1
+
+    def test_dedup_episodic_overlap(self):
+        """Near-duplicate EPISODIC entries (>50% word overlap) are deduplicated."""
+        engine, _ = make_engine()
+        engine.append_memory(
+            "Consciousness is a product of neural computation in the brain",
+            tier="EPISODIC",
+        )
+        engine.append_memory(
+            "Consciousness is a product of neural computation in the human brain",
+            tier="EPISODIC",
+        )
+        counts = engine.entry_count()
+        assert counts["EPISODIC"] == 1
+
+    def test_episodic_distinct_entries_kept(self):
+        """Genuinely different EPISODIC entries are kept."""
+        engine, _ = make_engine()
+        engine.append_memory("Searched for quantum mechanics", tier="EPISODIC")
+        engine.append_memory("Debated the simulation hypothesis", tier="EPISODIC")
+        counts = engine.entry_count()
         assert counts["EPISODIC"] == 2
+
+    def test_episodic_entry_cap(self):
+        """EPISODIC entries are capped at EPISODIC_MAX_ENTRIES."""
+        engine, _ = make_engine()
+        engine.EPISODIC_MAX_ENTRIES = 5
+        for i in range(10):
+            engine.append_memory(f"Unique thought number {i} about topic {i*7}", tier="EPISODIC")
+        counts = engine.entry_count()
+        assert counts["EPISODIC"] <= 5
 
     def test_dedup_identity(self):
         engine, _ = make_engine()
